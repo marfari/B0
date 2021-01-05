@@ -52,12 +52,20 @@ void set_up_workspace_variables(RooWorkspace& w);
 void read_data(RooWorkspace& w, TString f_input);
 void build_pdf (RooWorkspace& w, std::string choice = "nominal");
 void plot_mass_fit(RooWorkspace& w);
+void cut_tree(TString f_input);
 
+#define apply_cut 0
+
+// 1 = creates new tree with cuts applied
+// 0 = does not create new tree
 
 void b0(){
 
   TString input_file_data = "/lstore/cms/nuno/ppdata2017/001127_trkqual_b0/BZData.root";
+  //TString input_file_data = "./results/cutted_tree.root";
 
+  if(apply_cut == 1){cut_tree(input_file_data);}
+  
   RooWorkspace* ws = new RooWorkspace("ws");
   set_up_workspace_variables(*ws);
   read_data(*ws,input_file_data);
@@ -71,7 +79,7 @@ void b0(){
 void plot_mass_fit(RooWorkspace& w){
 
   RooAbsPdf* model = w.pdf("model");
-  RooDataSet* data = (RooDataSet*) w.data("data");
+  RooDataSet* data = (RooDataSet*) w.data("data"); 
 
   RooRealVar Bmass = *(w.var("Bmass"));
   RooRealVar* lambda   = w.var("lambda");
@@ -83,11 +91,12 @@ void plot_mass_fit(RooWorkspace& w){
 
   data->plotOn(massframe, RooFit::Name("Data"));
   model->plotOn(massframe, RooFit::Name("Fit"), RooFit::Range("all"), RooFit::LineColor(kRed), RooFit::LineStyle(1), RooFit::LineWidth(2));
-  model->plotOn(massframe, RooFit::Name("Signal"), RooFit::Components("pdf_m_signal"), RooFit::Range("all"), RooFit::LineColor(kOrange), RooFit::LineStyle(kDashed));
+  model->plotOn(massframe, RooFit::Name("Total Signal"), RooFit::Components("pdf_t_signal"), RooFit::Range("all"), RooFit::LineColor(kOrange), RooFit::LineStyle(kDashed));
+  model->plotOn(massframe, RooFit::Name("Corr Tag"), RooFit::Components("pdf_c_signal"), RooFit::Range("all"), RooFit::LineColor(kGreen), RooFit::LineStyle(kDashed));
+  model->plotOn(massframe, RooFit::Name("Mis Tag"), RooFit::Components("k_pi_swap"), RooFit::Range("all"), RooFit::LineColor(kGray), RooFit::LineStyle(kDashed));
   model->plotOn(massframe, RooFit::Name("Combinatorial"), RooFit::Components("pdf_m_combinatorial"), RooFit::Range("all"), RooFit::LineColor(kBlue), RooFit::LineStyle(kDashed));
-  model->plotOn(massframe, RooFit::Name("K Pi Swap"), RooFit::Components("k_pi_swap"), RooFit::Range("all"), RooFit::LineColor(kGreen), RooFit::LineStyle(kDashed));
 
-  model->paramOn(massframe, RooFit::Layout(0.55,0.95,0.90));
+  model->paramOn(massframe, RooFit::Layout(0.65,0.95,0.95));
 
   TCanvas d;
   d.SetTitle("");
@@ -142,13 +151,14 @@ void plot_mass_fit(RooWorkspace& w){
   tex13->SetTextFont(42);
   tex13->SetTextSize(0.04);
 
-  TLegend *leg = new TLegend (0.7, 0.5, 0.9, 0.7);
+  TLegend *leg = new TLegend (0.7, 0.2, 0.9, 0.4);
 
   leg->SetTextSize(0.03);
   leg->AddEntry(massframe->findObject("Data"), "Data", "l");
   leg->AddEntry(massframe->findObject("Fit"),"Fit","l");
-  leg->AddEntry(massframe->findObject("Signal"), "Right-tag sig", "l");
-  leg->AddEntry(massframe->findObject("K Pi Swap"), "Mis-tag sig", "l");
+  leg->AddEntry(massframe->findObject("Total Signal"), "Total sig", "l");
+  leg->AddEntry(massframe->findObject("Corr Tag"), "Corr. sig", "l");
+  leg->AddEntry(massframe->findObject("Mis Tag"), "Mis-tag sig", "l");
   leg->AddEntry(massframe->findObject("Combinatorial"), "Comb. bkg", "l");
 
   //leg->Draw("same");
@@ -196,7 +206,7 @@ void build_pdf(RooWorkspace& w, std::string choice){
   RooRealVar Bmass = *(w.var("Bmass"));
   RooDataSet* data = (RooDataSet*) w.data("data");
 
-  double mass_peak = 5.279;
+  double mass_peak = 5.280;
  
   //NORMALIZATIONS	
   double n_signal_initial = data->sumEntries(TString::Format("abs(Bmass-%g)<0.05",mass_peak)) - data->sumEntries(TString::Format("abs(Bmass-%g)<0.10&&abs(Bmass-%g)>0.05",mass_peak,mass_peak));
@@ -204,7 +214,7 @@ void build_pdf(RooWorkspace& w, std::string choice){
   RooRealVar n_signal("n_signal","n_signal",n_signal_initial,0.,data->sumEntries());
   RooRealVar n_combinatorial("n_combinatorial","n_combinatorial",n_combinatorial_initial,0.,data->sumEntries());
 
-  //SIGNAL 
+  //SIGNAL (correctly tagged)
   //sum of two gaussians
   RooRealVar mean("mean","mean",mass_peak,mass_peak-0.1,mass_peak+0.1);
   RooRealVar sigma1("sigma1","sigma1",0.02,0.005,0.05);
@@ -212,8 +222,8 @@ void build_pdf(RooWorkspace& w, std::string choice){
   RooRealVar sigma2("sigma2","sigma2",0.01,0.005,0.05);
   RooGaussian signal2("signal2","signal_gauss2",Bmass,mean,sigma2);
   RooRealVar cofs("cofs", "cofs", 0.3, 0., 1.);
-  RooAddPdf pdf_m_signal("pdf_m_signal", "pdf_m_signal", RooArgList(signal1,signal2),cofs);
-
+  RooAddPdf pdf_c_signal("pdf_c_signal", "pdf_c_signal", RooArgList(signal1,signal2),cofs);
+ 
   //BACKGROUND
   //exponential
   RooRealVar lambda("lambda","lambda",-2.,-5.,1.0);
@@ -249,15 +259,232 @@ void build_pdf(RooWorkspace& w, std::string choice){
   RooCBShape swapped3("swapped3","swapped3", Bmass, mean, sigma_swapped3, alpha3, n3_parameter);
 
   RooAddPdf k_pi_swap("k_pi_swap","k_pi_swap", RooArgSet(swapped1,swapped2,swapped3), RooArgSet(r1,r2));
-  RooRealVar f_swap("f_swap","f_swap", 0.1291);//value comes from?
-  RooProduct n_swap("n_swap","n_swap",RooArgList(n_signal,f_swap));
 
+  // FULL MODEL
+  RooRealVar f_swap("f_swap","f_swap", 0.5);
+  RooAddPdf pdf_t_signal("pdf_t_signal","pdf_t_signal",RooArgList(k_pi_swap,pdf_c_signal),RooArgList(f_swap));
 
   if (choice == "nominal"){
-    RooAddPdf model("model","model", RooArgList(pdf_m_signal, pdf_m_combinatorial, k_pi_swap), RooArgList(n_signal, n_combinatorial, n_swap));
+    RooAddPdf model("model","model", RooArgList(pdf_t_signal, pdf_m_combinatorial), RooArgList(n_signal, n_combinatorial));
     w.import(model);}
 }
 
+
+void cut_tree(TString f_input){
+  TFile* fin_data = new TFile(f_input);
+  TTree* t1_data = (TTree*)fin_data->Get("ntKstar");
+
+  float Bmass;
+  float By;
+  float Bpt;
+  float Btrk1pt;
+  float Btrk2pt;
+  float Btrk1eta;
+  float Btrk2eta;
+  float Btrk1pterr;
+  float Btrk2pterr;
+  float Bchi2cl;
+  float Bsvpvdistance;
+  float Bsvpvdiserr;
+  float Bsvpvdistance_2D;
+  float Bsvpvdiserr_2D;
+  float Bmumumass;
+  float Bmu1eta;
+  float Bmu2eta;
+  float Bmu1pt;
+  float Bmu2pt;
+  float Bmu1dxyPV;
+  float Bmu2dxyPV;
+  float Bmu1dzPV;
+  float Bmu2dzPV;
+  float Bd0;
+  float Bd0Err;
+  float Bdtheta;
+  float Balpha;
+  float Btrk1Dz1;
+  float Btrk2Dz1;
+  float Btrk1DzError1;
+  float Btrk2DzError1;
+  float Btrk1Dxy1;
+  float Btrk2Dxy1;
+  float Btrk1DxyError1;
+  float Btrk2DxyError1;
+  float Bmumueta;
+  float Bmumuphi;
+  float Bmumupt;
+
+  t1_data->SetBranchAddress("Bmass", &Bmass);
+  t1_data->SetBranchAddress("By", &By);
+  t1_data->SetBranchAddress("Bpt", &Bpt);
+  t1_data->SetBranchAddress("Btrk1Pt", &Btrk1pt);
+  t1_data->SetBranchAddress("Btrk2Pt", &Btrk2pt);
+  t1_data->SetBranchAddress("Btrk1Eta", &Btrk1eta);
+  t1_data->SetBranchAddress("Btrk2Eta", &Btrk2eta);
+  t1_data->SetBranchAddress("Btrk1PtErr", &Btrk1pterr);
+  t1_data->SetBranchAddress("Btrk2PtErr", &Btrk2pterr);
+  t1_data->SetBranchAddress("Bchi2cl", &Bchi2cl);
+  t1_data->SetBranchAddress("BsvpvDistance", &Bsvpvdistance);
+  t1_data->SetBranchAddress("BsvpvDisErr", &Bsvpvdiserr);
+  t1_data->SetBranchAddress("BsvpvDistance_2D", &Bsvpvdistance_2D);
+  t1_data->SetBranchAddress("BsvpvDisErr_2D", &Bsvpvdiserr_2D);
+  t1_data->SetBranchAddress("Bmumumass", &Bmumumass);
+  t1_data->SetBranchAddress("Bmu1eta", &Bmu1eta);
+  t1_data->SetBranchAddress("Bmu2eta", &Bmu2eta);
+  t1_data->SetBranchAddress("Bmu1pt", &Bmu1pt);
+  t1_data->SetBranchAddress("Bmu2pt", &Bmu2pt);
+  t1_data->SetBranchAddress("Bmu1dxyPV", &Bmu1dxyPV);
+  t1_data->SetBranchAddress("Bmu2dxyPV", &Bmu2dxyPV);
+  t1_data->SetBranchAddress("Bmu1dzPV", &Bmu1dzPV);
+  t1_data->SetBranchAddress("Bmu2dzPV", &Bmu2dzPV);
+  t1_data->SetBranchAddress("Bd0", &Bd0);
+  t1_data->SetBranchAddress("Bd0Err", &Bmu2dzPV);
+  t1_data->SetBranchAddress("Bdtheta", &Bdtheta);
+  t1_data->SetBranchAddress("Balpha", &Balpha);
+  t1_data->SetBranchAddress("Btrk1Dz1", &Btrk1Dz1);
+  t1_data->SetBranchAddress("Btrk2Dz1", &Btrk2Dz1);
+  t1_data->SetBranchAddress("Btrk1DzError1", &Btrk1DzError1);
+  t1_data->SetBranchAddress("Btrk2DzError1", &Btrk2DzError1);
+  t1_data->SetBranchAddress("Btrk1Dxy1", &Btrk1Dxy1);
+  t1_data->SetBranchAddress("Btrk2Dxy1", &Btrk2Dxy1);
+  t1_data->SetBranchAddress("Btrk1DxyError1", &Btrk1DxyError1);
+  t1_data->SetBranchAddress("Btrk2DxyError1", &Btrk2DxyError1);
+  t1_data->SetBranchAddress("Bmumueta", &Bmumueta);
+  t1_data->SetBranchAddress("Bmumuphi", &Bmumuphi);
+  t1_data->SetBranchAddress("Bmumupt", &Bmumupt);
+
+  TFile* f_tree = new TFile("./results/cutted_tree.root", "recreate");
+  f_tree->cd();
+
+  TTree *t_new = new TTree("ntKstar", "ntKstar");
+
+  float bmass;
+  float by;
+  float bpt;
+  float btrk1pt;
+  float btrk2pt;
+  float btrk1eta;
+  float btrk2eta;
+  float btrk1pterr;
+  float btrk2pterr;
+  float bchi2cl;
+  float bsvpvdistance;
+  float bsvpvdiserr;
+  float bsvpvdistance_2D;
+  float bsvpvdiserr_2D;
+  float bmumumass;
+  float bmu1eta;
+  float bmu2eta;
+  float bmu1pt;
+  float bmu2pt;
+  float bmu1dxyPV;
+  float bmu2dxyPV;
+  float bmu1dzPV;
+  float bmu2dzPV;
+  float bd0;
+  float bd0Err;
+  float bdtheta;
+  float balpha;
+  float btrk1Dz1;
+  float btrk2Dz1;
+  float btrk1DzError1;
+  float btrk2DzError1;
+  float btrk1Dxy1;
+  float btrk2Dxy1;
+  float btrk1DxyError1;
+  float btrk2DxyError1;
+  float bmumueta;
+  float bmumuphi;
+  float bmumupt;
+
+  t_new->Branch("Bmass", &bmass);
+  t_new->Branch("By", &by);
+  t_new->Branch("Bpt", &bpt);
+  t_new->Branch("Btrk1Pt", &btrk1pt);
+  t_new->Branch("Btrk2Pt", &btrk2pt);
+  t_new->Branch("Btrk1Eta", &btrk1eta);
+  t_new->Branch("Btrk2Eta", &btrk2eta);
+  t_new->Branch("Btrk1PtErr", &btrk1pterr);
+  t_new->Branch("Btrk2PtErr", &btrk2pterr);
+  t_new->Branch("Bchi2cl", &bchi2cl);
+  t_new->Branch("BsvpvDistance", &bsvpvdistance);
+  t_new->Branch("BsvpvDisErr", &bsvpvdiserr);
+  t_new->Branch("BsvpvDistance_2D", &bsvpvdistance_2D);
+  t_new->Branch("BsvpvDisErr_2D", &bsvpvdiserr_2D);
+  t_new->Branch("Bmumumass", &bmumumass);
+  t_new->Branch("Bmu1eta", &bmu1eta);
+  t_new->Branch("Bmu2eta", &bmu2eta);
+  t_new->Branch("Bmu1pt", &bmu1pt);
+  t_new->Branch("Bmu2pt", &bmu2pt);
+  t_new->Branch("Bmu1dxyPV", &bmu1dxyPV);
+  t_new->Branch("Bmu2dxyPV", &bmu2dxyPV);
+  t_new->Branch("Bmu1dzPV", &bmu1dzPV);
+  t_new->Branch("Bmu2dzPV", &bmu2dzPV);
+  t_new->Branch("Bd0", &bd0);
+  t_new->Branch("Bd0Err", &bmu2dzPV);
+  t_new->Branch("Bdtheta", &bdtheta);
+  t_new->Branch("Balpha", &balpha);
+  t_new->Branch("Btrk1Dz1", &btrk1Dz1);
+  t_new->Branch("Btrk2Dz1", &btrk2Dz1);
+  t_new->Branch("Btrk1DzError1", &btrk1DzError1);
+  t_new->Branch("Btrk2DzError1", &btrk2DzError1);
+  t_new->Branch("Btrk1Dxy1", &btrk1Dxy1);
+  t_new->Branch("Btrk2Dxy1", &btrk2Dxy1);
+  t_new->Branch("Btrk1DxyError1", &btrk1DxyError1);
+  t_new->Branch("Btrk2DxyError1", &btrk2DxyError1);
+  t_new->Branch("Bmumueta", &bmumueta);
+  t_new->Branch("Bmumuphi", &bmumuphi);
+  t_new->Branch("Bmumupt", &bmumupt);
+
+  float real_bmass = 5.280;
+
+  for(int i = 0; i < t1_data->GetEntries(); i++){
+    t1_data->GetEntry(i);
+
+    if(abs(Bmass-real_bmass) < 0.280){
+      bmass = Bmass;
+      by = By;
+      bpt = Bpt;
+      btrk1pt = Btrk1pt;
+      btrk2pt = Btrk2pt;
+      btrk1eta = Btrk1eta;
+      btrk2eta = Btrk2eta;
+      btrk1pterr = Btrk1pterr;
+      btrk2pterr = Btrk2pterr;
+      bchi2cl = Bchi2cl;
+      bsvpvdistance = Bsvpvdistance;
+      bsvpvdiserr = Bsvpvdiserr;
+      bsvpvdistance_2D = Bsvpvdistance_2D;
+      bsvpvdiserr_2D = Bsvpvdiserr_2D;
+      bmumumass = Bmumumass;
+      bmu1eta = Bmu1eta;
+      bmu2eta = Bmu2eta;
+      bmu1pt = Bmu1pt;
+      bmu2pt = Bmu2pt;
+      bmu1dxyPV = Bmu1dxyPV;
+      bmu2dxyPV = Bmu2dxyPV;
+      bmu1dzPV = Bmu1dzPV;
+      bmu2dzPV = Bmu2dzPV;
+      bd0 = Bd0;
+      bd0Err = Bd0Err;
+      bdtheta = Bdtheta;
+      balpha = Balpha;
+      btrk1Dz1 = Btrk1Dz1;
+      btrk2Dz1 = Btrk1Dz1;
+      btrk1DzError1 = Btrk1DzError1;
+      btrk2DzError1 = Btrk2DzError1;
+      btrk1Dxy1 = Btrk1Dxy1;
+      btrk2Dxy1 = Btrk2Dxy1;
+      btrk1DxyError1 = Btrk1DxyError1;
+      btrk2DxyError1 = Btrk2DxyError1;
+      bmumueta = Bmumueta;
+      bmumuphi = Bmumuphi;
+      bmumupt = Bmumupt;
+      t_new->Fill();
+    }
+  }
+ f_tree->Write();
+ f_tree->Close();
+}
 
 void read_data(RooWorkspace& w, TString f_input){
   TFile* fin_data = new TFile(f_input);
@@ -304,8 +531,10 @@ void read_data(RooWorkspace& w, TString f_input){
   arg_list.add(*(w.var("Bmumuphi")));
   arg_list.add(*(w.var("Bmumupt")));
 
+
   RooDataSet* data = new RooDataSet("data","data",t1_data,arg_list);
   w.import(*data);
+ 
 }
 
 
@@ -352,7 +581,7 @@ void set_up_workspace_variables(RooWorkspace& w){
 
 
   mass_min = 5.0;
-  mass_max = 6.0;
+  mass_max = 5.6;
 
   y_min = -2.4;
   y_max = 2.4;
